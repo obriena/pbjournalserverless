@@ -15,4 +15,11 @@ It is a [Maven](https://maven.apache.org/) based project, so you can open this p
  * `cdk diff`        compare deployed stack with current state
  * `cdk docs`        open CDK documentation
 
-Enjoy!
+
+This project was started with this command:
+```
+cdk init app --language java
+```
+
+# PBJournal Architecture
+This project is to reimplement the AWS Sail application using serverless technologies 
