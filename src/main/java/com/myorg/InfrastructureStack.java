@@ -1,20 +1,19 @@
 package com.myorg;
 
-import software.constructs.Construct;
 
-import java.io.File;
-import java.util.Arrays;
-import java.util.List;
-
+import software.amazon.awscdk.CfnOutput;
 import software.amazon.awscdk.RemovalPolicy;
 import software.amazon.awscdk.Stack;
 import software.amazon.awscdk.StackProps;
-import software.amazon.awscdk.services.apigateway.LambdaRestApi;
+import software.amazon.awscdk.services.apigateway.*;
 import software.amazon.awscdk.services.cloudfront.Behavior;
 import software.amazon.awscdk.services.cloudfront.CloudFrontWebDistribution;
 import software.amazon.awscdk.services.cloudfront.S3OriginConfig;
 import software.amazon.awscdk.services.cloudfront.SourceConfiguration;
+import software.amazon.awscdk.services.dynamodb.Attribute;
+import software.amazon.awscdk.services.dynamodb.AttributeType;
 import software.amazon.awscdk.services.dynamodb.Table;
+import software.amazon.awscdk.services.events.targets.ApiGateway;
 import software.amazon.awscdk.services.iam.Effect;
 import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.lambda.Code;
@@ -24,9 +23,13 @@ import software.amazon.awscdk.services.lambda.Runtime;
 import software.amazon.awscdk.services.s3.Bucket;
 import software.amazon.awscdk.services.signer.Platform;
 import software.amazon.awscdk.services.signer.SigningProfile;
-import software.amazon.awscdk.services.dynamodb.Attribute;
-import software.amazon.awscdk.services.dynamodb.AttributeType;
-import software.amazon.awscdk.services.dynamodb.GlobalSecondaryIndexProps;
+import software.constructs.Construct;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.*;
 
 public class InfrastructureStack extends Stack {
     private static final String RESOURCES = "src/main/resources";
@@ -40,14 +43,24 @@ public class InfrastructureStack extends Stack {
 
         createUserInterfaceArchitecture();
         Function validateSaveFunction = createValidateSaveFunction();
-        LambdaRestApi.Builder.create(this, "Endpoint")
-            .handler(validateSaveFunction)
-            .build();
+
+
+//        LambdaRestApi lambdaAPI = LambdaRestApi.Builder.create(this, "pbjValidateSaveUser")
+//            .handler(validateSaveFunction)
+//            .build();
+
+        ApiGateway apiGateway = ApiGateway.Builder.create(RestApi.Builder.create(this, "newUser").build()).build();
+        apiGateway.getRestApi().getRoot()
+                .resourceForPath("validate")
+                .addMethod("POST", LambdaIntegration.Builder.create(validateSaveFunction).build());
+
+        CfnOutput.Builder.create(this, "HTTP API URL").value(apiGateway.getRestApi().getUrl());
 
     }
 
     private Function createValidateSaveFunction() {
         String resourcesDir = deriveResourcesDirectory();
+
 
         PolicyStatement adminDynamoPolicy =  PolicyStatement.Builder.create()
             .actions(Arrays.asList( "dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan","dynamodb:UpdateItem","dynamodb:PutItem"))
@@ -101,24 +114,63 @@ public class InfrastructureStack extends Stack {
         .originConfigs(sourceConfigurations)
         .build();
 
-        Table userTable = Table.Builder.create(this, "PBJUsers")
-        .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
-        .build();
+        String userTableName = buildUserTable();
+        String activeSessionTableName = buildActiveSessionTable();
+        String sessionHistoryTableName = buildSessionHistoryTable();
 
+        Properties props = new Properties();
+        props.setProperty("userTableName", userTableName);
+        props.setProperty("activeSessionTable", activeSessionTableName);
+        props.setProperty("sesionHistoryTableNam", sessionHistoryTableName);
+
+        writePropertiesToLambdaConfig(props);
+    }
+
+
+
+    protected static void writePropertiesToLambdaConfig(Properties props) {
+        File f = new File(".");
+        String absPath = f.getAbsolutePath();
+        absPath = absPath.substring(0, absPath.length() -1);
+
+        String outPutPath = absPath + "src/main/resources/";
+        String fileName = "env.props";
+        System.out.println(outPutPath);
+
+        try {
+            FileOutputStream fos = new FileOutputStream(new File(outPutPath + fileName));
+            props.store(fos, "Environment Variables for lambda functions");
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+    private String buildActiveSessionTable() {
+        Table sessionTable = Table.Builder.create(this, "PBJActiveSessions")
+                .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+        System.out.println("Active Session Table Name: " + sessionTable.getTableName());
+        return sessionTable.getTableName();
+    }
+    private String buildSessionHistoryTable() {
         Table sessionTable = Table.Builder.create(this, "PBJSessions")
-        .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
-        .sortKey(Attribute.builder().name("email").type(AttributeType.STRING).build())
-        .sortKey(Attribute.builder().name("valid").type(AttributeType.STRING).build())
-        .build();
+                .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+        System.out.println("Session Table Name: " + sessionTable.getTableName());
+        return sessionTable.getTableName();
+    }
 
-        // GlobalSecondaryIndexProps emailIndexProp = GlobalSecondaryIndexProps.builder()
-        // .indexName("email-index")
-        // .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
-        // .sortKey(Attribute.builder().name("email").type(AttributeType.STRING).build())
-        // .build();
-
-        // sessionTable.addGlobalSecondaryIndex(emailIndexProp);
-
+    private String buildUserTable() {
+        Table userTable = Table.Builder.create(this, "PBJUsers")
+                .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+        System.out.println("User Table Name: " + userTable.getTableName());
+        return userTable.getTableName();
     }
 
     private String deriveResourcesDirectory(){

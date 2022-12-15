@@ -8,8 +8,11 @@ from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.conditions import Attr
 
-PBJSessionsTableName = "InfrastructureStack-PBJSessionsB35B5F37-RSH6RR1H4LIF"
-PBJUsersTableName    = "InfrastructureStack-PBJUsers4F5D3B04-1CS9RG2F0VEJR"
+
+PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-BZOEKCXZOO66"
+PBJSessionHistoryTableName = "InfrastructureStack-PBJSessionsB35B5F37-D22MMSNCON12"
+PBJUsersTableName    = "InfrastructureStack-PBJUsers4F5D3B04-179SG4K8B4VB5"
+dynamoClient = boto3.client('dynamodb')
 
 def lambda_handler(event, context):
     central = dateutil.tz.gettz('US/Central')
@@ -25,8 +28,6 @@ def lambda_handler(event, context):
     body = json.loads(bodyStr)
     print(body['email'])
 
-    dynamoClient = boto3.client('dynamodb')
-
     aUser = dynamoClient.get_item(
         TableName=PBJUsersTableName,
         Key={
@@ -37,9 +38,60 @@ def lambda_handler(event, context):
     print("Is a good user: ", ('Item' in aUser))
     print (json.dumps(aUser, indent=2))
 
+    sessionId = str(uuid.uuid4())
     if ('Item' in aUser):
         print ('Found user')
+        # retrieve the active session and update the sessionId
+        # retrieve the session history and update the lastAccess to match the old lastAccess time
+        # finally update the session in the active ssessions table with a new session, create time and last access time
+        actSessin = dynamoClient.get_item(
+            TableName=PBJActiveSessionsTableName,
+            Key={
+                'id': {'S': body['email']}
+            }
+        )
+        if ('Item' in actSessin):
+            #update last access in history
+            histSession = dynamoClient.update_item(
+                TableName=PBJSessionHistoryTableName,
+                Key={
+                    'id': {'S': actSessin['Item']['sessionId']['S']}
+                },
+                UpdateExpression="set lastAccess = :la",
+                ExpressionAttributeValues={
+                    ':la': {'S': actSessin['Item']['lastAccess']['S']}
+                },
+                ReturnValues="UPDATED_NEW"
+            )
+
+            #Update active session with new session Id
+            dynamoClient.update_item(
+                TableName=PBJActiveSessionsTableName,
+                Key={
+                    'id': {'S': body['email']}
+                },
+                UpdateExpression="set sessionId = :s, lastAccess = :la, createTime = :ct",
+                ExpressionAttributeValues={
+                    ':s': {'S': sessionId},
+                    ':la': {'S': str(ts)},
+                    ':ct': {'S': str(ts)}
+                },
+                ReturnValues="UPDATED_NEW"
+            )
+            #save new session in history
+            dynamoClient.put_item(
+            TableName=PBJSessionHistoryTableName,
+            Item={
+                'id': {'S': sessionId},
+                'email': {'S': body['email']},
+                'createTime' : {'S': str(ts)},
+                'lastAccess' : {'S': str(ts)}
+            }
+    )
+        else:
+            saveNewSessionData(sessionId, body['email'], str(ts))         
     else:
+        #This is a new user.  Create a record in the PBJUsers table, and a record in the PBJActiveSessions table, and a record in the PBJSessions table
         dynamoClient.put_item(
             TableName=PBJUsersTableName,
             Item={
@@ -48,57 +100,44 @@ def lambda_handler(event, context):
                 'lastName': {'S': body['lastName']},
                 'firstName': {'S': body['firstName']},
                 'profilePic': {'S': body['profilePic']},
-                'authSource': {'S': body['authSource']}
+                'authSource': {'S': body['authSource']},
+                'createTime' : {'S': str(ts)}
             }
         )
-    try:
-        print("Updating valid flag in session table")
-        dynamoClient.update_item(
-            TableName=PBJSessionsTableName,
-            Key={'email': body['email'], 'valid': 'Y'},
-            UpdateExpression="set valid = :val",
-            ExpressionAttributeValues={':val': str('N')},
-            ReturnValues="UPDATED_NEW")
-    except ClientError as err:
-        logger.error(
-            "Couldn't update valid flag in session table. Here's why: %s: %s",
-            err.response['Error']['Code'], err.response['Error']['Message'])
-   
-    # newSessionValid = str("Y")
-    # aSession = dynamoClient.query(
-    #     TableName=PBJSessionsTableName,
-    #     IndexName="email-index",
-    #     KeyConditionExpression=Key('email').eq(body['email'])
-    # )
-    # print("aSession: ")
-    # print(aSession)
-    # if ('Item' in aSession):
-    #     dynamoClient.update_item(
-    #         TableName=PBJSessionsTableName,
-    #         Key={
-    #             'id': {'S': aSession['id']},
-    #             'sessionId': {'S': aSession['sessionId']}
-    #         },
-    #         UpdateExpression="SET valid = :v",
-    #         ExpressionAttributeValues={
-    #             ':v': {'S': 'N'}
-    #         }
-    #     )
+        saveNewSessionData(sessionId, body['email'], str(ts))
+    payload = {
+                  "message": "hello " + body['firstName'],
+                  "status": "success",
+                  "extra" : sessionId
+              }
+    response = {
+        'isBase64Encoded': False,
+        'statusCode': 200,
+        'headers': {
+            'Content-Type': "application/json"
+        },
+        'body': json.dumps(payload)
+    }
+    print (json.dumps(response, indent=2))
+    return response
 
-    sessionId = str(uuid.uuid4())
 
+def saveNewSessionData(sessionId, email, timestamp):
     dynamoClient.put_item(
-        TableName=PBJSessionsTableName,
+        TableName=PBJActiveSessionsTableName,
         Item={
-            'id': {'S': sessionId},
-            'email': {'S': body['email']},
-            'valid': {'S': 'Y'},
-            'createTime' : {'S': str(ts)}
+            'id': {'S': email},
+            'sessionId': {'S': sessionId},
+            'createTime' : {'S': timestamp},
+            'lastAccess' : {'S': timestamp}
         }
     )
-
-    return {
-        "message": "hello " + body['firstName'],
-        "status": "success",
-        "extra" : sessionId
-    }
+    dynamoClient.put_item(
+        TableName=PBJSessionHistoryTableName,
+        Item={
+            'id': {'S': sessionId},
+            'email': {'S': email},
+            'createTime' : {'S': timestamp},
+            'lastAccess' : {'S': timestamp}
+        }
+    )

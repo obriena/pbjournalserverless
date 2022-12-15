@@ -1,0 +1,7 @@
+{
+    "email":"aobrien.fs@gmail.com",
+    "lastName":"OBrien",
+    "firstName":"Aaron",
+    "profilePic":"https://lh3.googleusercontent.com/a/AEdFTp5qxdadAclcfx1uXL8rFPRQhJeaR1hl5gSVBZDowYc=s96-c",
+    "authSource":"google"
+  }
