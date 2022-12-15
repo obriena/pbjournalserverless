@@ -22,11 +22,9 @@ def lambda_handler(event, context):
     print("Current Time = ", ct)
 
     print("Validate Save user")
-    #print("Received event: " + json.dumps(event, indent=2))
 
     bodyStr = event['body']
     body = json.loads(bodyStr)
-    print(body['email'])
 
     aUser = dynamoClient.get_item(
         TableName=PBJUsersTableName,
@@ -34,9 +32,6 @@ def lambda_handler(event, context):
             'id': {'S': body['email']}
         }
     )
-    print("aUser: ")
-    print("Is a good user: ", ('Item' in aUser))
-    print (json.dumps(aUser, indent=2))
 
     sessionId = str(uuid.uuid4())
     if ('Item' in aUser):
@@ -118,7 +113,6 @@ def lambda_handler(event, context):
         },
         'body': json.dumps(payload)
     }
-    print (json.dumps(response, indent=2))
     return response
 
 

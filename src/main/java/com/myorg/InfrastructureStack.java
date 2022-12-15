@@ -44,11 +44,6 @@ public class InfrastructureStack extends Stack {
         createUserInterfaceArchitecture();
         Function validateSaveFunction = createValidateSaveFunction();
 
-
-//        LambdaRestApi lambdaAPI = LambdaRestApi.Builder.create(this, "pbjValidateSaveUser")
-//            .handler(validateSaveFunction)
-//            .build();
-
         ApiGateway apiGateway = ApiGateway.Builder.create(RestApi.Builder.create(this, "newUser").build()).build();
         apiGateway.getRestApi().getRoot()
                 .resourceForPath("validate")
@@ -60,7 +55,6 @@ public class InfrastructureStack extends Stack {
 
     private Function createValidateSaveFunction() {
         String resourcesDir = deriveResourcesDirectory();
-
 
         PolicyStatement adminDynamoPolicy =  PolicyStatement.Builder.create()
             .actions(Arrays.asList( "dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan","dynamodb:UpdateItem","dynamodb:PutItem"))
