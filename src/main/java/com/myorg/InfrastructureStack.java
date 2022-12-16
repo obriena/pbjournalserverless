@@ -44,11 +44,23 @@ public class InfrastructureStack extends Stack {
         createUserInterfaceArchitecture();
         Function validateSaveFunction = createValidateSaveFunction();
 
-        ApiGateway apiGateway = ApiGateway.Builder.create(RestApi.Builder.create(this, "newUser").build()).build();
+        ApiGateway apiGateway = ApiGateway.Builder.create(RestApi.Builder.create(this, "pbjservices").build()).build();
+        CorsOptions cors = CorsOptions.builder()
+                .allowHeaders(Arrays.asList("Origin", "Content-Type", "X-Auth-Token", "X-Amz-Date", "Authorization", "X-Api-Key", "Id"))
+                .allowOrigins(Arrays.asList("*"))
+                .allowMethods(Arrays.asList("OPTIONS", "POST"))
+                .build();
         apiGateway.getRestApi().getRoot()
                 .resourceForPath("validate")
                 .addMethod("POST", LambdaIntegration.Builder.create(validateSaveFunction).build());
 
+        apiGateway.getRestApi().getRoot().resourceForPath("validate").addCorsPreflight(cors);
+    //            .addCorsPreflight(
+    //            CorsOptions.builder()
+    //                    .allowHeaders(Arrays.asList("Origin", "Content-Type", "X-Auth-Token", "X-Amz-Date", "Authorization", "X-Api-Key"))
+    //                    .allowOrigins(Arrays.asList("*"))
+    //                    .allowMethods(Arrays.asList("OPTIONS", "POST"))
+    //                    .build());
         CfnOutput.Builder.create(this, "HTTP API URL").value(apiGateway.getRestApi().getUrl());
 
     }

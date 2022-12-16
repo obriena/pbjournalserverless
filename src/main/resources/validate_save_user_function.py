@@ -100,16 +100,29 @@ def lambda_handler(event, context):
             }
         )
         saveNewSessionData(sessionId, body['email'], str(ts))
+
+    savedUser = {
+        'email': body['email'],
+        'lastName': body['lastName'],
+        'firstName': body['firstName'],
+        'profilePic': body['profilePic'],
+        'authSource': body['authSource']
+    }
     payload = {
-                  "message": "hello " + body['firstName'],
-                  "status": "success",
-                  "extra" : sessionId
-              }
+        "message": "hello " + body['firstName'],
+        "status": "success",
+        "extra" : savedUser
+    }
     response = {
         'isBase64Encoded': False,
         'statusCode': 200,
         'headers': {
-            'Content-Type': "application/json"
+            'Access-Control-Allow-Headers': 'Id, Content-Type, Origin, X-Auth-Token, X-Amz-Date, Authorization, X-Api-Key',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Id': sessionId,
+            'Content-Type': "application/json",
+            'Access-Control-Expose-Headers': 'Id'
         },
         'body': json.dumps(payload)
     }
