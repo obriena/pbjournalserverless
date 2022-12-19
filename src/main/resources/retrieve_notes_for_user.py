@@ -9,10 +9,10 @@ from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.conditions import Attr
 
+import session_validation_layer
+
 PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-BZOEKCXZOO66"
 dynamoClient = boto3.client('dynamodb')
-
-timeoutSeconds = 60 * 15
 
 def lambda_handler(event, context):
     central = dateutil.tz.gettz('US/Central')
@@ -20,50 +20,11 @@ def lambda_handler(event, context):
     ts = ct.timestamp()
 
     print("Current Time = ", ct)
-    #print(event)
     sessionId = event['headers']['id']
     user = event['headers']['userId']
 
-    #Active Session retrieves theActiveSession by the UserId
-    aSession = dynamoClient.get_item(
-        TableName=PBJActiveSessionsTableName,
-        Key={
-            'id': {'S': user}
-        }
-    )
-    sessionValid = True
-    if ('Item' in aSession):
-        storedSessionId = aSession['Item']['sessionId']['S']
-        print("Found active session id: ", storedSessionId)
-        print("Header SessionID: ", sessionId)
-        if (sessionId == storedSessionId):
-            stringLastAccess = aSession['Item']['lastAccess']['S']
-            #something like this: 1671400079.785493
-            floatLastAccess = float(stringLastAccess)
-            intLastAccess = (int(floatLastAccess))
+    sessionValid = session_validation_layer.validate_session(user, sessionId)
 
-            dateLastAccess = datetime.fromtimestamp(intLastAccess)
-            now = datetime.now()
-            diff = now - dateLastAccess
-            seconds = diff.seconds
-            print ("Age of session in seconds: ", seconds)
-            if (seconds > timeoutSeconds):
-                sessionValid = False
-            else:
-                print("Updating timestamp to: ", str(now.timestamp))
-                updSession = dynamoClient.update_item(
-                    TableName=PBJActiveSessionsTableName,
-                    Key={
-                        'id': {'S': user}
-                    },
-                    UpdateExpression="set lastAccess = :la",
-                    ExpressionAttributeValues={
-                        ':la': {'S': str(now.timestamp())}
-                    },
-                    ReturnValues="UPDATED_NEW"
-                )
-        else:
-            sessionValid = False
     payload = {
         "message": "hello ",
         "status": "success",

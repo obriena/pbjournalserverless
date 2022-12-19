@@ -16,9 +16,7 @@ import software.amazon.awscdk.services.dynamodb.Table;
 import software.amazon.awscdk.services.events.targets.ApiGateway;
 import software.amazon.awscdk.services.iam.Effect;
 import software.amazon.awscdk.services.iam.PolicyStatement;
-import software.amazon.awscdk.services.lambda.Code;
-import software.amazon.awscdk.services.lambda.CodeSigningConfig;
-import software.amazon.awscdk.services.lambda.Function;
+import software.amazon.awscdk.services.lambda.*;
 import software.amazon.awscdk.services.lambda.Runtime;
 import software.amazon.awscdk.services.s3.Bucket;
 import software.amazon.awscdk.services.signer.Platform;
@@ -53,9 +51,13 @@ public class InfrastructureStack extends Stack {
         super(scope, id, props);
 
         createUserInterfaceArchitecture();
-        
-        Function validateSaveFunction  = createLambdaFunction("Login", "validate_save_user_function.lambda_handler");
-        Function retrieveNotesFunction = createLambdaFunction("RetrieveNotes", "retrieve_notes_for_user.lambda_handler");
+
+        LayerVersion layer = new LayerVersion(this, "SessionValidationLayer", LayerVersionProps.builder()
+                .code(Code.fromAsset(deriveResourcesDirectory()))
+                .compatibleRuntimes(List.of(Runtime.PYTHON_3_9))
+                .build());
+        Function validateSaveFunction  = createLambdaFunction("Login", "validate_save_user_function.lambda_handler", layer);
+        Function retrieveNotesFunction = createLambdaFunction("RetrieveNotes", "retrieve_notes_for_user.lambda_handler", layer);
 
         buildApiGatewayMapping("user", "POST", validateSaveFunction);
         buildApiGatewayMapping("notes", "GET", retrieveNotesFunction);
@@ -88,7 +90,7 @@ public class InfrastructureStack extends Stack {
         CfnOutput.Builder.create(this, "HTTP API URL").value(API_GATEWAY.getRestApi().getUrl());
     }
 
-    private Function createLambdaFunction(String lambdaName, String pythonLambdaName) {
+    private Function createLambdaFunction(String lambdaName, String pythonLambdaName, LayerVersion layer) {
         String resourcesDir = deriveResourcesDirectory();
 
         PolicyStatement adminDynamoPolicy =  PolicyStatement.Builder.create()
@@ -102,12 +104,11 @@ public class InfrastructureStack extends Stack {
             .runtime(Runtime.PYTHON_3_9)
             .handler(pythonLambdaName)
             .code(Code.fromAsset(resourcesDir))
+            .layers(List.of(layer))
             .build();
         function.addToRolePolicy(adminDynamoPolicy);
 
         return function;
-
-
     }
 
     private void createUserInterfaceArchitecture(){
