@@ -20,8 +20,7 @@ def lambda_handler(event, context):
     ts = ct.timestamp()
 
     print("Current Time = ", ct)
-
-    print("Validate Save user")
+    print(event)
 
     bodyStr = event['body']
     body = json.loads(bodyStr)

@@ -33,6 +33,17 @@ import java.util.*;
 
 public class InfrastructureStack extends Stack {
     private static final String RESOURCES = "src/main/resources";
+    private static final String ROOT_API = "pbjservices";
+
+    private final SigningProfile CODE_PROFILE = SigningProfile.Builder.create(this, "CodeSigningProfile")
+            .platform(Platform.AWS_LAMBDA_SHA384_ECDSA)
+            .build();
+
+    private final CodeSigningConfig CONFIG = CodeSigningConfig.Builder.create(this, "CodeSigningConfigDynamo")
+            .signingProfiles(Arrays.asList(CODE_PROFILE))
+            .build();
+
+    private final ApiGateway API_GATEWAY = ApiGateway.Builder.create(RestApi.Builder.create(this, ROOT_API).build()).build();
 
     public InfrastructureStack(final Construct scope, final String id) {
         this(scope, id, null);
@@ -42,50 +53,54 @@ public class InfrastructureStack extends Stack {
         super(scope, id, props);
 
         createUserInterfaceArchitecture();
-        Function validateSaveFunction = createValidateSaveFunction();
+        
+        Function validateSaveFunction  = createLambdaFunction("Login", "validate_save_user_function.lambda_handler");
+        Function retrieveNotesFunction = createLambdaFunction("RetrieveNotes", "retrieve_notes_for_user.lambda_handler");
 
-        ApiGateway apiGateway = ApiGateway.Builder.create(RestApi.Builder.create(this, "pbjservices").build()).build();
-        CorsOptions cors = CorsOptions.builder()
-                .allowHeaders(Arrays.asList("Origin", "Content-Type", "X-Auth-Token", "X-Amz-Date", "Authorization", "X-Api-Key", "Id"))
-                .allowOrigins(Arrays.asList("*"))
-                .allowMethods(Arrays.asList("OPTIONS", "POST"))
-                .build();
-        apiGateway.getRestApi().getRoot()
-                .resourceForPath("validate")
-                .addMethod("POST", LambdaIntegration.Builder.create(validateSaveFunction).build());
-
-        apiGateway.getRestApi().getRoot().resourceForPath("validate").addCorsPreflight(cors);
-    //            .addCorsPreflight(
-    //            CorsOptions.builder()
-    //                    .allowHeaders(Arrays.asList("Origin", "Content-Type", "X-Auth-Token", "X-Amz-Date", "Authorization", "X-Api-Key"))
-    //                    .allowOrigins(Arrays.asList("*"))
-    //                    .allowMethods(Arrays.asList("OPTIONS", "POST"))
-    //                    .build());
-        CfnOutput.Builder.create(this, "HTTP API URL").value(apiGateway.getRestApi().getUrl());
+        buildApiGatewayMapping("user", "POST", validateSaveFunction);
+        buildApiGatewayMapping("notes", "GET", retrieveNotesFunction);
 
     }
 
-    private Function createValidateSaveFunction() {
+    private void buildApiGatewayMapping(String endpoint, String method, Function lambdaFunction) {
+
+        CorsOptions cors = CorsOptions.builder()
+                .allowHeaders(Arrays.asList("Origin", "Content-Type", "X-Auth-Token", "X-Amz-Date", "Authorization", "X-Api-Key", "Id"))
+                .allowOrigins(Arrays.asList("*"))
+                .allowMethods(Arrays.asList("OPTIONS", method))
+                .build();
+        API_GATEWAY.getRestApi().getRoot()
+                .resourceForPath(endpoint)
+                .addMethod(method, LambdaIntegration.Builder.create(lambdaFunction)
+                        .passthroughBehavior(PassthroughBehavior.WHEN_NO_TEMPLATES)
+                        .requestTemplates(Map.of("application/json", "{\n" +
+                                "  \"method\": \"$context.httpMethod\",\n" +
+                                "  \"body\" : $input.json('$'),\n" +
+                                "  \"headers\": {\n" +
+                                "    #foreach($param in $input.params().header.keySet())\n" +
+                                "    \"$param\": \"$util.escapeJavaScript($input.params().header.get($param))\"\n" +
+                                "    #if($foreach.hasNext),#end\n" +
+                                "    #end\n" +
+                                "  }\n" +
+                                "}"))
+                        .build());
+        API_GATEWAY.getRestApi().getRoot().resourceForPath(endpoint).addCorsPreflight(cors);
+        CfnOutput.Builder.create(this, "HTTP API URL").value(API_GATEWAY.getRestApi().getUrl());
+    }
+
+    private Function createLambdaFunction(String lambdaName, String pythonLambdaName) {
         String resourcesDir = deriveResourcesDirectory();
 
         PolicyStatement adminDynamoPolicy =  PolicyStatement.Builder.create()
-            .actions(Arrays.asList( "dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan","dynamodb:UpdateItem","dynamodb:PutItem"))
+            .actions(Arrays.asList( "dynamodb:GetItem", "dynamodb:Query", "dynamodb:UpdateItem","dynamodb:PutItem"))
             .resources(Arrays.asList("*"))
             .effect(Effect.ALLOW)
             .build();
-        
-        SigningProfile codeProfile = SigningProfile.Builder.create(this, "CodeSigningProfile")
-            .platform(Platform.AWS_LAMBDA_SHA384_ECDSA)
-            .build();
 
-        CodeSigningConfig config = CodeSigningConfig.Builder.create(this, "CodeSigningConfigDynamo")
-            .signingProfiles(Arrays.asList(codeProfile))
-            .build();
-            
-        Function function = Function.Builder.create(this, "DynamoFunction")
-            .codeSigningConfig(config)
+        Function function = Function.Builder.create(this, lambdaName)
+            .codeSigningConfig(CONFIG)
             .runtime(Runtime.PYTHON_3_9)
-            .handler("validate_save_user_function.lambda_handler")
+            .handler(pythonLambdaName)
             .code(Code.fromAsset(resourcesDir))
             .build();
         function.addToRolePolicy(adminDynamoPolicy);
