@@ -10,10 +10,10 @@ from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.conditions import Attr
 import session_validation_layer
 
+PBJUserNotesTableName    = "InfrastructureStack-PBJUsersNotes32044C9E-1ASYV3I7XHQ8U"
+PBJNotesTableName        = "InfrastructureStack-PBJNotesA2A9A042-8RUXMDXA8I00"
+PBJTagsTableName         = "InfrastructureStack-PBJTags636C4DA2-MQ2VYHKLEFHD"
 
-PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-BZOEKCXZOO66"
-PBJSessionHistoryTableName = "InfrastructureStack-PBJSessionsB35B5F37-D22MMSNCON12"
-PBJUsersTableName    = "InfrastructureStack-PBJUsers4F5D3B04-179SG4K8B4VB5"
 dynamoClient = boto3.client('dynamodb')
 
 def lambda_handler(event, context):
@@ -28,6 +28,90 @@ def lambda_handler(event, context):
     sessionValid = session_validation_layer.validate_session(user, sessionId)
 
     payload= {'validSession': sessionValid}
+
+    bodyStr = event['body']
+    body = json.loads(bodyStr)
+    noteId = body['noteId']
+
+    savedNote = dynamoClient.get_item(
+        TableName=PBJNotesTableName,
+        Key={
+            'id': {'S': noteId}
+        }
+    )
+
+    if ('Item' in savedNote):
+        savedNote = savedNote['Item']
+        tags = savedNote['tags']['S']
+        splitTags = tags.split(',')
+        if (len(splitTags) == 1):
+            splitTags = tags.split(';')
+        for aTag in splitTags:
+            aTag = aTag.strip()
+            aTag = aTag.replace("#", '')
+
+            #Retrieve the tag
+            savedTag = dynamoClient.get_item(
+                TableName=PBJTagsTableName,
+                Key={
+                    'id': {'S': user},
+                    'tag': {'S': aTag}
+                }
+            )
+            #Get the list of notes tied to this tag and find the one that is being deleted
+            tagNoteIds = savedTag['Item']['noteIds']['L']
+            
+            for nId in tagNoteIds:
+                theId = nId['S']
+                if (theId == noteId):
+                    tagNoteIds.remove(nId)
+                    break
+
+            dynamoClient.update_item(
+                TableName=PBJTagsTableName,
+                Key={
+                    'id': {'S': user},
+                    'tag': {'S': aTag}
+                },
+                UpdateExpression="set noteIds = :n",
+                ExpressionAttributeValues={
+                    ':n': {'L': tagNoteIds}
+                }
+            )
+            #Pull back the list of userNotes and remove the noteId from the list
+            userNotes = dynamoClient.get_item(
+                TableName=PBJUserNotesTableName,
+                Key={
+                    'id': {'S': user}
+                }
+            )
+            if ('Item' in userNotes):
+                print("Found notes for user: ", user)
+                notes = userNotes['Item']['noteIds']['L']
+                print("Number of notes found: ", len(notes))
+                for note in notes:
+                    savedNoteId = note['S']
+                    if (savedNoteId == noteId):
+                        notes.remove(note)
+                        dynamoClient.update_item(
+                            TableName=PBJUserNotesTableName,
+                            Key={
+                                'id': {'S': user}
+                            },
+                            UpdateExpression="set noteIds = :n",
+                            ExpressionAttributeValues={
+                                ':n': {'L': notes}
+                            }
+                        )
+    #Delete the note (the easy part)
+    dynamoClient.delete_item(
+        TableName=PBJNotesTableName,
+        Key={
+            'id': {'S': noteId}
+        }
+    )
+
+
 
     response = {
         'isBase64Encoded': False,

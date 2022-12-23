@@ -110,7 +110,7 @@ public class InfrastructureStack extends Stack {
         String resourcesDir = deriveResourcesDirectory();
 
         PolicyStatement adminDynamoPolicy =  PolicyStatement.Builder.create()
-            .actions(Arrays.asList( "dynamodb:GetItem", "dynamodb:Query", "dynamodb:UpdateItem","dynamodb:PutItem"))
+            .actions(Arrays.asList( "dynamodb:GetItem", "dynamodb:Query", "dynamodb:UpdateItem","dynamodb:PutItem", "dynamodb:DeleteItem"))
             .resources(Arrays.asList("*"))
             .effect(Effect.ALLOW)
             .build();
