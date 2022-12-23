@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.conditions import Attr
 
-PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-BZOEKCXZOO66"
+PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-GOPD6DUJJ4HD"
 timeoutSeconds = 60 * 15
 
 def validate_session(user, sessionId):

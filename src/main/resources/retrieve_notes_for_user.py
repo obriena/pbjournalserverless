@@ -11,7 +11,10 @@ from boto3.dynamodb.conditions import Attr
 
 import session_validation_layer
 
-PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-BZOEKCXZOO66"
+PBJUserNotesTableName    = "InfrastructureStack-PBJUsersNotes32044C9E-1ASYV3I7XHQ8U"
+PBJNotesTableName        = "InfrastructureStack-PBJNotesA2A9A042-8RUXMDXA8I00"
+
+PBJTagsTableName         = "InfrastructureStack-PBJTags636C4DA2-MQ2VYHKLEFHD"
 dynamoClient = boto3.client('dynamodb')
 
 def lambda_handler(event, context):
@@ -20,10 +23,16 @@ def lambda_handler(event, context):
     ts = ct.timestamp()
 
     print("Current Time = ", ct)
-    sessionId = event['headers']['id']
-    user = event['headers']['userId']
 
-    sessionValid = session_validation_layer.validate_session(user, sessionId)
+    sessionValid = False
+    try:
+        sessionId = event['headers']['id']
+        user = event['headers']['userid']
+
+        sessionValid = session_validation_layer.validate_session(user, sessionId)
+    except:
+        print("Exception working with headers:")
+        print(event['headers'])
 
     payload = {
         "message": "hello ",
@@ -32,8 +41,43 @@ def lambda_handler(event, context):
     }
     if (sessionValid):
         print('Valid Session/user')
-        #Retrieve the notes
-        # payload['extra'] = retrieveNotesForUser(user)
+        userNotes = dynamoClient.get_item(
+            TableName=PBJUserNotesTableName,
+            Key={
+                'id': {'S': user}
+            }
+        )
+        if ('Item' in userNotes):
+            print("Found notes for user: ", user)
+            notes = userNotes['Item']['noteIds']['L']
+            print("Number of notes found: ", len(notes))
+            respNotes = []
+            for note in notes:
+                noteId = note['S']
+                print("NoteId: ", noteId)
+                savedNote = dynamoClient.get_item(
+                    TableName=PBJNotesTableName,
+                    Key={
+                        'id': {'S': noteId}
+                    }
+                )
+                if ('Item' in savedNote):
+                    thisNote = savedNote['Item']
+                    print("Found note: ", thisNote)
+                    content = thisNote['content']['S']
+                    createTime = thisNote['createTime']['S']
+                    lastEditTime = thisNote['lastEditTime']['S']
+                    id= thisNote['id']['S']
+                    savedTags = thisNote['tags']['S']
+                    respNote = {'id':id,
+                                'userId': lastEditTime,
+                                'createTime': createTime,
+                                'content': content,
+                                'labelsAsText': savedTags
+                                }
+                    respNotes.append(respNote)
+                    print("Response Note: ", len(respNotes))
+            payload['extra'] = respNotes
     else:
         payload['message'] = "Session Invalid"
         payload['status'] = "error"
@@ -42,7 +86,7 @@ def lambda_handler(event, context):
         'isBase64Encoded': False,
         'statusCode': 200,
         'headers': {
-            'Access-Control-Allow-Headers': 'Id, Content-Type, Origin, X-Auth-Token, X-Amz-Date, Authorization, X-Api-Key',
+            'Access-Control-Allow-Headers': 'Id, UserId, Content-Type, Origin, X-Auth-Token, X-Amz-Date, Authorization, X-Api-Key',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, OPTIONS',
             'Id': sessionId,

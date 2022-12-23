@@ -9,9 +9,9 @@ from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.conditions import Attr
 
 
-PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-BZOEKCXZOO66"
-PBJSessionHistoryTableName = "InfrastructureStack-PBJSessionsB35B5F37-D22MMSNCON12"
-PBJUsersTableName    = "InfrastructureStack-PBJUsers4F5D3B04-179SG4K8B4VB5"
+PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-GOPD6DUJJ4HD"
+PBJSessionHistoryTableName = "InfrastructureStack-PBJSessionsB35B5F37-XU8PI89KBXV4"
+PBJUsersTableName    = "InfrastructureStack-PBJUsers4F5D3B04-RG82T12GUFRV"
 dynamoClient = boto3.client('dynamodb')
 
 def lambda_handler(event, context):

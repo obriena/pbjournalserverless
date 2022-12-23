@@ -6,6 +6,7 @@ import software.amazon.awscdk.RemovalPolicy;
 import software.amazon.awscdk.Stack;
 import software.amazon.awscdk.StackProps;
 import software.amazon.awscdk.services.apigateway.*;
+import software.amazon.awscdk.services.certificatemanager.Certificate;
 import software.amazon.awscdk.services.cloudfront.Behavior;
 import software.amazon.awscdk.services.cloudfront.CloudFrontWebDistribution;
 import software.amazon.awscdk.services.cloudfront.S3OriginConfig;
@@ -32,7 +33,7 @@ import java.util.*;
 public class InfrastructureStack extends Stack {
     private static final String RESOURCES = "src/main/resources";
     private static final String ROOT_API = "pbjservices";
-
+    private static final String AWS_CERT_ARN = "arn:aws:acm:us-east-2:746355193120:certificate/6b22b4fb-57bf-4bf9-82e9-1a0952a2fb93";
     private final SigningProfile CODE_PROFILE = SigningProfile.Builder.create(this, "CodeSigningProfile")
             .platform(Platform.AWS_LAMBDA_SHA384_ECDSA)
             .build();
@@ -51,6 +52,7 @@ public class InfrastructureStack extends Stack {
         super(scope, id, props);
 
         createUserInterfaceArchitecture();
+        createTablesForNoteManagement();
 
         LayerVersion layer = new LayerVersion(this, "SessionValidationLayer", LayerVersionProps.builder()
                 .code(Code.fromAsset(deriveResourcesDirectory()))
@@ -58,16 +60,30 @@ public class InfrastructureStack extends Stack {
                 .build());
         Function validateSaveFunction  = createLambdaFunction("Login", "validate_save_user_function.lambda_handler", layer);
         Function retrieveNotesFunction = createLambdaFunction("RetrieveNotes", "retrieve_notes_for_user.lambda_handler", layer);
+        Function saveNoteFunction = createLambdaFunction("SaveNote", "save_note.lambda_handler", layer);
+        Function updateNoteFunction = createLambdaFunction("UpdateNote", "update_note.lambda_handler", layer);
+        Function deleteNoteFunction = createLambdaFunction("DeleteNote", "delete_note.lambda_handler", layer);
+
+        API_GATEWAY.getRestApi().addDomainName("pbjournalservices", DomainNameOptions.builder()
+        .domainName("api.flyingspheres.info")
+        .securityPolicy(SecurityPolicy.TLS_1_2)
+        .certificate(Certificate.fromCertificateArn(this, "fsInfoCert", AWS_CERT_ARN))
+        .endpointType(EndpointType.REGIONAL).build());
+
+        //There is a manually created record in Route53 to point to this custome domain name
 
         buildApiGatewayMapping("user", "POST", validateSaveFunction);
         buildApiGatewayMapping("notes", "GET", retrieveNotesFunction);
+        buildApiGatewayMapping("saveNote", "POST", saveNoteFunction);
+        buildApiGatewayMapping("updateNote", "PUT", updateNoteFunction);
+        buildApiGatewayMapping("deleteNote", "DELETE", deleteNoteFunction);
 
     }
 
     private void buildApiGatewayMapping(String endpoint, String method, Function lambdaFunction) {
 
         CorsOptions cors = CorsOptions.builder()
-                .allowHeaders(Arrays.asList("Origin", "Content-Type", "X-Auth-Token", "X-Amz-Date", "Authorization", "X-Api-Key", "Id"))
+                .allowHeaders(Arrays.asList("Origin", "Content-Type", "X-Auth-Token", "X-Amz-Date", "Authorization", "X-Api-Key", "id","userid"))
                 .allowOrigins(Arrays.asList("*"))
                 .allowMethods(Arrays.asList("OPTIONS", method))
                 .build();
@@ -148,7 +164,36 @@ public class InfrastructureStack extends Stack {
         writePropertiesToLambdaConfig(props);
     }
 
+    private void createTablesForNoteManagement() {
+        String userNotesTable = buildTable("PBJUsersNotes");
+        //String userTagsTable  = buildTable("PBJUsersTags");
+        String noteTable      = buildTable("PBJNotes");
 
+        //Tags Table
+        Table tagsTable = Table.Builder.create(this, "PBJTags")
+                .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
+                .sortKey(Attribute.builder().name("tag").type(AttributeType.STRING).build())
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+    }
+
+    private String buildActiveSessionTable() {
+        return buildTable("PBJActiveSessions");
+    }
+    private String buildSessionHistoryTable() {
+        return buildTable("PBJSessions");
+    }
+    private String buildUserTable() {
+        return buildTable("PBJUsers");
+    }
+
+    private String buildTable(String tableName){
+        Table sessionTable = Table.Builder.create(this, tableName)
+                .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+        return sessionTable.getTableName();
+    }
 
     protected static void writePropertiesToLambdaConfig(Properties props) {
         File f = new File(".");
@@ -168,31 +213,6 @@ public class InfrastructureStack extends Stack {
             e.printStackTrace();
         }
 
-    }
-    private String buildActiveSessionTable() {
-        Table sessionTable = Table.Builder.create(this, "PBJActiveSessions")
-                .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
-                .removalPolicy(RemovalPolicy.DESTROY)
-                .build();
-        System.out.println("Active Session Table Name: " + sessionTable.getTableName());
-        return sessionTable.getTableName();
-    }
-    private String buildSessionHistoryTable() {
-        Table sessionTable = Table.Builder.create(this, "PBJSessions")
-                .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
-                .removalPolicy(RemovalPolicy.DESTROY)
-                .build();
-        System.out.println("Session Table Name: " + sessionTable.getTableName());
-        return sessionTable.getTableName();
-    }
-
-    private String buildUserTable() {
-        Table userTable = Table.Builder.create(this, "PBJUsers")
-                .partitionKey(Attribute.builder().name("id").type(AttributeType.STRING).build())
-                .removalPolicy(RemovalPolicy.DESTROY)
-                .build();
-        System.out.println("User Table Name: " + userTable.getTableName());
-        return userTable.getTableName();
     }
 
     private String deriveResourcesDirectory(){
