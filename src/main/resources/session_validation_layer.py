@@ -13,6 +13,7 @@ PBJActiveSessionsTableName = "InfrastructureStack-PBJActiveSessions8DE764BB-GOPD
 timeoutSeconds = 60 * 15
 
 def validate_session(user, sessionId):
+    print("Validating session for user: ", user, " and session id: ", sessionId)
     dynamoClient = boto3.client('dynamodb')
     #Active Session retrieves theActiveSession by the UserId
     aSession = dynamoClient.get_item(
@@ -53,6 +54,7 @@ def validate_session(user, sessionId):
                     ReturnValues="UPDATED_NEW"
                 )
         else:
+            prtin("Session ID does not match stored session ID")
             sessionValid = False
 
     return sessionValid

@@ -21,7 +21,12 @@ def lambda_handler(event, context):
     sessionId = event['headers']['id']
     user = event['headers']['userid']
 
+    print("user = ", user)
+    print("sessionId = ", sessionId)
+    
     sessionValid = session_validation_layer.validate_session(user, sessionId)
+
+    print("sessionValid = ", sessionValid)
     payload = {}
     payload['extra'] = ''
     payload['message'] = "valid session"
