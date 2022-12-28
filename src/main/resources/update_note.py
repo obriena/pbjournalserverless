@@ -52,7 +52,7 @@ def lambda_handler(event, context):
                 'id': {'S': user}
             }
         )
-        usersTags = []
+        tagsForUser = []
         tagsDataStructs = []
         if ('Item' in usersTags):
             #  Add tag to the list of tags
@@ -62,7 +62,7 @@ def lambda_handler(event, context):
             tagsDataStructs = tags
             for aTag in tags:
                 theTag =  aTag['S']
-                usersTags.append(theTag)
+                tagsForUser.append(theTag)
         else:
             print("No User Tags Found")
 
@@ -100,8 +100,9 @@ def lambda_handler(event, context):
 
         #Save the new tags tied to this note
         for aTag in newTagsList:
-            if (aTag not in usersTags):
+            if (aTag not in tagsForUser):
                 tagsDataStructs.append({'S': aTag})
+            
             savedTag = dynamoClient.get_item(
                 TableName=PBJTagsTableName,
                 Key={
