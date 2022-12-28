@@ -58,11 +58,15 @@ public class InfrastructureStack extends Stack {
                 .code(Code.fromAsset(deriveResourcesDirectory()))
                 .compatibleRuntimes(List.of(Runtime.PYTHON_3_9))
                 .build());
+        Function validateSessionFunction  = createLambdaFunction("ValidateSession", "validate_session.lambda_handler", layer);
         Function validateSaveFunction  = createLambdaFunction("Login", "validate_save_user_function.lambda_handler", layer);
         Function retrieveNotesFunction = createLambdaFunction("RetrieveNotes", "retrieve_notes_for_user.lambda_handler", layer);
+        Function retrieveTagsFunction = createLambdaFunction("RetrieveTags", "retrieve_tags_for_user.lambda_handler", layer);
+        Function retrieveNotesForTagsFunction = createLambdaFunction("RetrieveNotesByTag", "retrieve_notes_by_tag_for_user.lambda_handler", layer);
         Function saveNoteFunction = createLambdaFunction("SaveNote", "save_note.lambda_handler", layer);
         Function updateNoteFunction = createLambdaFunction("UpdateNote", "update_note.lambda_handler", layer);
         Function deleteNoteFunction = createLambdaFunction("DeleteNote", "delete_note.lambda_handler", layer);
+        
 
         API_GATEWAY.getRestApi().addDomainName("pbjournalservices", DomainNameOptions.builder()
         .domainName("api.flyingspheres.info")
@@ -71,9 +75,11 @@ public class InfrastructureStack extends Stack {
         .endpointType(EndpointType.REGIONAL).build());
 
         //There is a manually created record in Route53 to point to this custome domain name
-
         buildApiGatewayMapping("user", "POST", validateSaveFunction);
+        buildApiGatewayMapping("validateSession", "POST", validateSessionFunction);
         buildApiGatewayMapping("notes", "GET", retrieveNotesFunction);
+        buildApiGatewayMapping("tags", "GET", retrieveTagsFunction);
+        buildApiGatewayMapping("notesForTag", "GET", retrieveNotesForTagsFunction);
         buildApiGatewayMapping("saveNote", "POST", saveNoteFunction);
         buildApiGatewayMapping("updateNote", "PUT", updateNoteFunction);
         buildApiGatewayMapping("deleteNote", "DELETE", deleteNoteFunction);
@@ -166,7 +172,7 @@ public class InfrastructureStack extends Stack {
 
     private void createTablesForNoteManagement() {
         String userNotesTable = buildTable("PBJUsersNotes");
-        //String userTagsTable  = buildTable("PBJUsersTags");
+        String userTagsTable  = buildTable("PBJUsersTags");
         String noteTable      = buildTable("PBJNotes");
 
         //Tags Table

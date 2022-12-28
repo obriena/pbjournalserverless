@@ -12,7 +12,7 @@ import session_validation_layer
 
 PBJUserNotesTableName    = "InfrastructureStack-PBJUsersNotes32044C9E-1ASYV3I7XHQ8U"
 PBJNotesTableName        = "InfrastructureStack-PBJNotesA2A9A042-8RUXMDXA8I00"
-
+PBJUsersTagsTableName    = "InfrastructureStack-PBJUsersTagsE5F16220-Z4WWK9TR5ND9"
 PBJTagsTableName         = "InfrastructureStack-PBJTags636C4DA2-MQ2VYHKLEFHD"
 
 dynamoClient = boto3.client('dynamodb')
@@ -104,6 +104,46 @@ def lambda_handler(event, context):
         for aTag in reqTags:
             aTag = aTag.strip()
             aTag = aTag.replace("#", '')
+
+            usersTags = dynamoClient.get_item(
+                TableName=PBJUsersTagsTableName,
+                Key={
+                    'id': {'S': user}
+                }
+            )
+            if ('Item' in usersTags):
+                #  Add tag to the list of tags
+                print("User Tags Found")
+                print(usersTags['Item'])
+                tags = usersTags['Item']['tags']['L']
+                print("Tags found: ", tags)
+                justTags = []
+                for iTag in tags:
+                    theTag =  iTag['S']
+                    justTags.append(theTag)
+                print ('If tag ', aTag, ' is not in ', justTags, ": ", (aTag not in justTags))
+                if (aTag not in justTags):
+                    tags.append({'S':aTag})
+                    dynamoClient.update_item(
+                        TableName=PBJUsersTagsTableName,
+                        Key={
+                            'id': {'S': user}
+                        },
+                        UpdateExpression="set tags = :n",
+                        ExpressionAttributeValues={
+                            ':n': {'L': tags}
+                        }
+                    )
+            else:
+                # No tags for this user so add a new list with our new tag 
+                #    In it
+                dynamoClient.put_item(
+                    TableName=PBJUsersTagsTableName,
+                    Item={
+                        'id': {'S':user},
+                        'tags':{'L':[{'S':aTag}]}
+                    }
+                )
 
             savedTag = dynamoClient.get_item(
                 TableName=PBJTagsTableName,
