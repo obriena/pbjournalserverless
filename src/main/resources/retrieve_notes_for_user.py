@@ -77,7 +77,8 @@ def lambda_handler(event, context):
                                 }
                     respNotes.append(respNote)
                     print("Response Note: ", len(respNotes))
-            payload['extra'] = respNotes
+            sortedList = sorted(respNotes, key=lambda k: k['createTime'], reverse=True)
+            payload['extra'] = sortedList
     else:
         payload['message'] = "Session Invalid"
         payload['status'] = "error"
