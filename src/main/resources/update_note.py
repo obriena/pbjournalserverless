@@ -66,6 +66,7 @@ def lambda_handler(event, context):
         else:
             print("No User Tags Found")
 
+        #NewTagString is coming from the user. It is a comma or semi-colon separated list of tags.
         splitNewTags = newTagString.split(',')
         if (len(splitNewTags) == 1):
             splitNewTags = newTagString.split(';')
@@ -87,6 +88,25 @@ def lambda_handler(event, context):
         
         #Now we have two lists of tags. One is the new tags, the other is the saved tags.
         # We need to compare the two lists and determine if there are any changes.
+
+        #First, let's do a quick validation to see that we have all of the tags the user is submitting in our "usersTags" table.
+        for tagFromUserReq in newTagsList:
+            if (tagFromUserReq not in tagsForUser):
+                tagsDataStructs.append({'S': tagFromUserReq})
+                print("Adding tag to usersTags: ", tagFromUserReq)
+
+                dynamoClient.update_item(
+                    TableName=PBJUsersTagsTableName,
+                    Key={
+                        'id':{'S':user}
+                    },
+                    UpdateExpression="Set #theTags = list_append(#theTags, :newTag)",
+                    ExpressionAttributeNames={'#theTags':'tags'},
+                    ExpressionAttributeValues={
+                        ":newTag":{'L':[{'S':tagFromUserReq}]}
+                    }
+                )
+
         tagsToSave = []
         tagsToDelete = []
         for aTag in newTagsList:
@@ -137,6 +157,9 @@ def lambda_handler(event, context):
                         'noteIds':{'L':[{'S':noteId}]}
                     }
                 )
+        #Looping over the tags that need to be removed from this note
+        #  However in the removing of the tag, we do need to make sure that 
+        #  If there are no notes for the tag we delete the tag and the reference in the usertags table
         for aTag in tagsToDelete:
             savedTag = dynamoClient.get_item(
                 TableName=PBJTagsTableName,
@@ -152,19 +175,33 @@ def lambda_handler(event, context):
             
                 for nId in tagNoteIds:
                     theId = nId['S']
+                    #Removing the note Id from the the list of ID's
                     if (theId == noteId):
                         tagNoteIds.remove(nId)
                         break
                 if (len(tagNoteIds) == 0):
-                    #We have a tag that doesn't have any notes associated with it
-                    if (aTag in usersTags):
-                        usersTags.remove(aTag)
-                        for aTagStruct in tagsDataStructs:
-                            theTag = aTagStruct['S']
+                    #Delete the tag from the usersTags table
+                    freshUserTags = dynamoClient.get_item(
+                        TableName=PBJUsersTagsTableName,
+                        Key={
+                            'id':{'S':user}
+                        }
+                    )
+                    if ('Item' in freshUserTags):
+                        freshTags = freshUserTags['Item']['tags']['L']
+                        for i in range(len(freshTags)):
+                            freshTag = freshTags[i]
+                            theTag = freshTag['S']
                             if (theTag == aTag):
-                                tagsDataStructs.remove(aTagStruct)
+                                dynamoClient.update_item(
+                                    TableName=PBJUsersTagsTableName,
+                                    Key={
+                                        'id':{'S':user}
+                                    },
+                                    UpdateExpression="REMOVE tags["+str(i)+"]",
+                                )
                                 break
-                    #Delete the tag
+                    
                     dynamoClient.delete_item(
                         TableName=PBJTagsTableName,
                         Key={
@@ -172,6 +209,7 @@ def lambda_handler(event, context):
                             'tag': {'S': aTag}
                         }
                     )
+
                 else:
                     dynamoClient.update_item(
                         TableName=PBJTagsTableName,
@@ -186,29 +224,18 @@ def lambda_handler(event, context):
                     )
             #else I don't think there should be an else condition here
 
-            #At this point we have updated the tags now it should be just a simple update on the note itself
-
-            dynamoClient.update_item(
-                TableName=PBJNotesTableName,
-                Key={
-                    'id': {'S': noteId}
-                },
-                UpdateExpression="set content = :c, tags = :t, lastEditTime = :l",
-                ExpressionAttributeValues={ ':c': {'S': newContent}, 
-                                            ':t': {'S': newTagString}, 
-                                            ':l': {'S': str(datetime.now().timestamp())}}
-            )
-            #Update the user's tags
-            dynamoClient.update_item(
-                TableName=PBJUsersTagsTableName,
-                Key={
-                    'id': {'S': user}
-                },
-                UpdateExpression="set tags = :t",
-                ExpressionAttributeValues={
-                    ':t': {'L': tagsDataStructs}
-                }
-            )
+    #At this point we have updated the tags now it should be just a simple update on the note itself
+    print("After updating all of the tags, nowe we're updating the note itself")
+    dynamoClient.update_item(
+        TableName=PBJNotesTableName,
+        Key={
+            'id': {'S': noteId}
+        },
+        UpdateExpression="set content = :c, tags = :t, lastEditTime = :l",
+        ExpressionAttributeValues={ ':c': {'S': newContent}, 
+                                    ':t': {'S': newTagString}, 
+                                    ':l': {'S': str(datetime.now().timestamp())}}
+    )
 
     response = {
         'isBase64Encoded': False,

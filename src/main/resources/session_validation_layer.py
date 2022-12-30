@@ -54,7 +54,7 @@ def validate_session(user, sessionId):
                     ReturnValues="UPDATED_NEW"
                 )
         else:
-            prtin("Session ID does not match stored session ID")
+            print("Session ID does not match stored session ID")
             sessionValid = False
 
     return sessionValid
